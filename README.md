@@ -1,3 +1,5 @@
+<p align="center"><img src="logo.png" alt="ShegerPay" width="200" /></p>
+
 # ShegerPay JavaScript / TypeScript SDK
 
 Official JS/TS SDK for ShegerPay — verify Ethiopian bank payments in Node.js or the browser.
