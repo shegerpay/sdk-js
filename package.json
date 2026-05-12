@@ -1,0 +1,42 @@
+{
+  "name": "@shegerpay/sdk",
+  "version": "2.2.0",
+  "description": "Official TypeScript SDK for ShegerPay Payment Verification Gateway",
+  "main": "dist/shegerpay.js",
+  "module": "dist/shegerpay.js",
+  "types": "dist/shegerpay.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/black12-ag/ShegerPay"
+  },
+  "keywords": [
+    "shegerpay",
+    "ethiopia",
+    "payment",
+    "cbe",
+    "telebirr",
+    "crypto",
+    "verification",
+    "payment-gateway"
+  ],
+  "author": "ShegerPay <support@shegerpay.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/black12-ag/ShegerPay/issues"
+  },
+  "homepage": "https://shegerpay.com",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
