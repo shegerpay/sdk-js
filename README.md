@@ -42,4 +42,4 @@ const valid = ShegerPay.verifyWebhookSignature(payload, signature, secret);
 ## Docs
 
 - Full docs: https://shegerpay.com/docs
-- Support: support@shegerpay.com | https://t.me/shegerpay0
+- Support: support@shegerpay.com | https://t.me/shegerpay_0
