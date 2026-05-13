@@ -55,6 +55,20 @@ export interface PaymentLinkParams {
   amount: number;
   currency?: 'ETB' | 'USD';
   description?: string;
+  amountMode?: 'fixed' | 'preset_options' | 'customer_decides' | 'minimum';
+  amountOptions?: number[];
+  minAmount?: number;
+  maxAmount?: number;
+  promoCodeIds?: string[];
+  paymentMethodLayout?: 'list' | 'icon_grid' | 'two_column_grid' | 'compact_scroll';
+  allowQuantity?: boolean;
+  maxQuantity?: number;
+  redirectUrl?: string;
+  webhookUrl?: string;
+  businessName?: string;
+  merchantLogoUrl?: string;
+  themeColor?: string;
+  hideBranding?: boolean;
   enableCbe?: boolean;
   enableTelebirr?: boolean;
   enableCrypto?: boolean;
@@ -72,6 +86,24 @@ export interface PaymentLink {
   status: 'active' | 'inactive' | 'expired';
 }
 
+export interface PaymentLinkOrderStatus {
+  status: string;
+  order_id: string;
+  checkout_session_id: string;
+  short_code: string;
+  amount: number;
+  gross_amount?: number;
+  discount_amount?: number;
+  currency: string;
+  provider?: string;
+  promo_code?: string;
+  transaction_id?: string;
+  verified_at?: string;
+  paid_at?: string;
+  redirect_url?: string;
+  signature?: string;
+}
+
 export interface PaymentLinkSubmissionParams {
   shortCode: string;
   paymentMethod: string;
@@ -79,6 +111,37 @@ export interface PaymentLinkSubmissionParams {
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
+}
+
+export interface PromoCodeParams {
+  code: string;
+  discountType?: 'percent' | 'fixed';
+  discountValue?: number;
+  discountPercent?: number;
+  maxDiscountAmount?: number | null;
+  minOrderAmount?: number | null;
+  maxUses?: number | null;
+  maxUsesPerCustomer?: number | null;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  active?: boolean;
+  appliesToLinkIds?: string[] | null;
+  allowedProviders?: string[] | null;
+  metadata?: Record<string, any> | null;
+}
+
+export interface PromoCodeValidateParams {
+  code: string;
+  amount: number;
+  linkId?: string;
+  provider?: string;
+  customerIdentifier?: string;
+}
+
+export interface PromoCodeRedeemParams extends PromoCodeValidateParams {
+  transactionId: string;
+  orderId?: string;
+  idempotencyKey?: string;
 }
 
 export interface WebhookParams {
@@ -264,7 +327,7 @@ export class ShegerPay {
    */
   async verifyImage(params: {
     screenshot: Blob | File;
-    amount: number;
+    amount?: number;
     provider?: string;
     merchantName?: string;
     transactionId?: string;
@@ -272,11 +335,10 @@ export class ShegerPay {
     senderAccount?: string;
   }): Promise<VerificationResult> {
     if (!params.screenshot) throw new ValidationError('screenshot is required');
-    if (!params.amount) throw new ValidationError('amount is required');
 
     const form = new FormData();
     form.append('screenshot', params.screenshot);
-    form.append('amount', String(params.amount));
+    if (params.amount !== undefined) form.append('amount', String(params.amount));
     if (params.provider) form.append('provider', params.provider);
     if (params.merchantName) form.append('merchant_name', params.merchantName);
     if (params.transactionId) form.append('transaction_id', params.transactionId);
@@ -304,10 +366,85 @@ export class ShegerPay {
       amount,
       currency: currency || 'ETB',
       description,
+      amount_mode: params.amountMode,
+      amount_options: params.amountOptions,
+      min_amount: params.minAmount,
+      max_amount: params.maxAmount,
+      promo_code_ids: params.promoCodeIds,
+      payment_method_layout: params.paymentMethodLayout,
+      allow_quantity: params.allowQuantity,
+      max_quantity: params.maxQuantity,
+      redirect_url: params.redirectUrl,
+      webhook_url: params.webhookUrl,
+      business_name: params.businessName,
+      merchant_logo_url: params.merchantLogoUrl,
+      theme_color: params.themeColor,
+      hide_branding: params.hideBranding,
       enable_cbe: enableCbe !== false,
       enable_telebirr: enableTelebirr !== false,
       enable_crypto: enableCrypto || false,
       expires_in_hours: expiresInHours || 24
+    });
+  }
+
+  // ============================================
+  // Promo Codes
+  // ============================================
+
+  async createPromoCode(params: PromoCodeParams): Promise<Record<string, any>> {
+    if (!params.code) throw new ValidationError('code is required');
+    return this.request('POST', '/api/v1/promo-codes/', this.normalizePromoCodeParams(params));
+  }
+
+  async listPromoCodes(): Promise<Record<string, any>[]> {
+    return this.request('GET', '/api/v1/promo-codes/');
+  }
+
+  async updatePromoCode(codeId: string, params: Partial<PromoCodeParams>): Promise<Record<string, any>> {
+    if (!codeId) throw new ValidationError('codeId is required');
+    return this.request('PATCH', `/api/v1/promo-codes/${codeId}`, this.normalizePromoCodeParams(params));
+  }
+
+  async deletePromoCode(codeId: string): Promise<void> {
+    if (!codeId) throw new ValidationError('codeId is required');
+    return this.request('DELETE', `/api/v1/promo-codes/${codeId}`);
+  }
+
+  async validatePromoCode(params: PromoCodeValidateParams): Promise<Record<string, any>> {
+    if (!params.code) throw new ValidationError('code is required');
+    if (!params.amount) throw new ValidationError('amount is required');
+    return this.request('POST', '/api/v1/promo-codes/validate', {
+      code: params.code,
+      amount: params.amount,
+      link_id: params.linkId,
+      provider: params.provider,
+      customer_identifier: params.customerIdentifier
+    });
+  }
+
+  async redeemPromoCode(params: PromoCodeRedeemParams): Promise<Record<string, any>> {
+    if (!params.transactionId) throw new ValidationError('transactionId is required');
+    return this.request('POST', '/api/v1/promo-codes/redeem', {
+      code: params.code,
+      amount: params.amount,
+      link_id: params.linkId,
+      provider: params.provider,
+      customer_identifier: params.customerIdentifier,
+      transaction_id: params.transactionId,
+      order_id: params.orderId,
+      idempotency_key: params.idempotencyKey
+    });
+  }
+
+  async applyPaymentLinkCoupon(shortCode: string, code: string, options: { amount?: number; quantity?: number; provider?: string; customerIdentifier?: string } = {}): Promise<Record<string, any>> {
+    if (!shortCode) throw new ValidationError('shortCode is required');
+    if (!code) throw new ValidationError('code is required');
+    return this.request('POST', `/api/v1/payment-links/${shortCode}/apply-coupon`, {
+      code,
+      amount: options.amount,
+      quantity: options.quantity || 1,
+      provider: options.provider,
+      customer_identifier: options.customerIdentifier
     });
   }
 
@@ -330,9 +467,19 @@ export class ShegerPay {
   /**
    * Check payment link status by short code.
    */
-  async getPaymentLinkStatus(shortCode: string): Promise<Record<string, any>> {
+  async getPaymentLinkStatus(shortCode: string, orderId?: string): Promise<Record<string, any>> {
     if (!shortCode) throw new ValidationError('shortCode is required');
-    return this.request('GET', `/api/v1/payment-links/${shortCode}/status`);
+    const qs = orderId ? `?order_id=${encodeURIComponent(orderId)}` : '';
+    return this.request('GET', `/api/v1/payment-links/${shortCode}/status${qs}`);
+  }
+
+  /**
+   * Get the source-of-truth status for one checkout order.
+   */
+  async getPaymentLinkOrderStatus(shortCode: string, orderId: string): Promise<PaymentLinkOrderStatus> {
+    if (!shortCode) throw new ValidationError('shortCode is required');
+    if (!orderId) throw new ValidationError('orderId is required');
+    return this.request('GET', `/api/v1/payment-links/${shortCode}/orders/${orderId}/status`);
   }
 
   /**
@@ -402,8 +549,22 @@ export class ShegerPay {
   /**
    * Test a webhook
    */
-  async testWebhook(webhookId: string): Promise<{ success: boolean; statusCode: number }> {
-    return this.request('POST', '/api/v1/webhooks/test', { webhook_id: webhookId });
+  async testWebhook(webhookId: string, eventType: string = 'payment_link.order.verified'): Promise<{ success: boolean; statusCode: number }> {
+    const params = new URLSearchParams({ webhook_id: webhookId, event_type: eventType });
+    return this.request('POST', `/api/v1/webhooks/test?${params.toString()}`);
+  }
+
+  async getWebhookEvents(): Promise<Record<string, any>> {
+    return this.request('GET', '/api/v1/webhooks/events');
+  }
+
+  async getWebhookLogs(params: { webhookId?: string; status?: string; limit?: number } = {}): Promise<{ logs: any[] }> {
+    const query = new URLSearchParams();
+    if (params.webhookId) query.set('webhook_id', params.webhookId);
+    if (params.status) query.set('status', params.status);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request('GET', `/api/v1/webhooks/logs${suffix}`);
   }
 
   // ============================================
@@ -592,6 +753,25 @@ export class ShegerPay {
     return this.request('GET', '/api/v1/analytics/api-usage');
   }
 
+  private normalizePromoCodeParams(params: Partial<PromoCodeParams>): Record<string, any> {
+    return {
+      code: params.code,
+      discount_type: params.discountType,
+      discount_value: params.discountValue ?? params.discountPercent,
+      discount_percent: params.discountPercent,
+      max_discount_amount: params.maxDiscountAmount,
+      min_order_amount: params.minOrderAmount,
+      max_uses: params.maxUses,
+      max_uses_per_customer: params.maxUsesPerCustomer,
+      starts_at: params.startsAt,
+      expires_at: params.expiresAt,
+      active: params.active,
+      applies_to_link_ids: params.appliesToLinkIds,
+      allowed_providers: params.allowedProviders,
+      metadata: params.metadata
+    };
+  }
+
   // ============================================
   // Internal Request Method
   // ============================================
@@ -649,6 +829,9 @@ export class ShegerPay {
         throw new ShegerPayError(message, response.status, 'GEN_001');
       }
 
+      if (response.status === 204) {
+        return undefined as T;
+      }
       return response.json() as Promise<T>;
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -703,6 +886,62 @@ export async function verifyWebhookSignature(
     .join('');
 
   return `sha256=${expected}` === signature;
+}
+
+export interface RedirectSignatureParams {
+  checkoutSessionId: string;
+  orderId: string;
+  shortCode: string;
+  amount: number | string;
+  currency?: string;
+  status?: string;
+}
+
+/**
+ * Verify signed payment-link redirect parameters.
+ *
+ * Redirect is buyer UX only. Always confirm payment server-side with the
+ * order status API or the signed webhook before fulfilling an order.
+ */
+export async function verifyRedirectSignature(
+  params: RedirectSignatureParams,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  const amount = typeof params.amount === 'number'
+    ? params.amount.toFixed(2)
+    : Number(params.amount).toFixed(2);
+  const payload = [
+    params.checkoutSessionId,
+    params.orderId,
+    params.shortCode,
+    amount,
+    params.currency || 'ETB',
+    params.status || 'paid',
+  ].join('|');
+
+  if (typeof require !== 'undefined') {
+    const crypto = require('crypto');
+    const expected = crypto
+      .createHmac('sha256', secret)
+      .update(payload)
+      .digest('hex');
+    return expected === signature || `sha256=${expected}` === signature;
+  }
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  const expected = Array.from(new Uint8Array(signatureBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return expected === signature || `sha256=${expected}` === signature;
 }
 
 // ============================================

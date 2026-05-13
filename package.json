@@ -34,6 +34,7 @@
   },
   "homepage": "https://shegerpay.com",
   "devDependencies": {
+    "@types/node": "^20.19.0",
     "typescript": "^5.0.0"
   },
   "engines": {

@@ -124,11 +124,10 @@ class ShegerPay {
     async verifyImage(params) {
         const { screenshot, amount, provider, merchantName, transactionId, phoneNumber, senderAccount } = params;
         if (!screenshot) throw new ValidationError('screenshot is required');
-        if (!amount) throw new ValidationError('amount is required');
 
         const form = new FormData();
         form.append('screenshot', screenshot);
-        form.append('amount', amount.toString());
+        if (amount !== undefined && amount !== null) form.append('amount', amount.toString());
         if (provider) form.append('provider', provider);
         if (merchantName) form.append('merchant_name', merchantName);
         if (transactionId) form.append('transaction_id', transactionId);
@@ -547,10 +546,97 @@ class ShegerPay {
             amount,
             currency: currency || 'ETB',
             description,
+            amount_mode: params.amountMode,
+            amount_options: params.amountOptions,
+            min_amount: params.minAmount,
+            max_amount: params.maxAmount,
+            promo_code_ids: params.promoCodeIds,
+            payment_method_layout: params.paymentMethodLayout,
+            allow_quantity: params.allowQuantity,
+            max_quantity: params.maxQuantity,
+            business_name: params.businessName,
+            merchant_logo_url: params.merchantLogoUrl,
+            theme_color: params.themeColor,
             enable_cbe: enableCbe !== false,
             enable_telebirr: enableTelebirr !== false,
             enable_crypto: enableCrypto || false,
             expires_in_hours: expiresInHours || 24
+        }, true);
+    }
+
+    _normalizePromoCodeParams(params) {
+        return {
+            code: params.code,
+            discount_type: params.discountType,
+            discount_value: params.discountValue ?? params.discountPercent,
+            discount_percent: params.discountPercent,
+            max_discount_amount: params.maxDiscountAmount,
+            min_order_amount: params.minOrderAmount,
+            max_uses: params.maxUses,
+            max_uses_per_customer: params.maxUsesPerCustomer,
+            starts_at: params.startsAt,
+            expires_at: params.expiresAt,
+            active: params.active,
+            applies_to_link_ids: params.appliesToLinkIds,
+            allowed_providers: params.allowedProviders,
+            metadata: params.metadata
+        };
+    }
+
+    async createPromoCode(params) {
+        if (!params.code) throw new ValidationError('code is required');
+        return this._request('POST', '/api/v1/promo-codes/', this._normalizePromoCodeParams(params), true);
+    }
+
+    async listPromoCodes() {
+        return this._request('GET', '/api/v1/promo-codes/');
+    }
+
+    async updatePromoCode(codeId, params) {
+        if (!codeId) throw new ValidationError('codeId is required');
+        return this._request('PATCH', `/api/v1/promo-codes/${codeId}`, this._normalizePromoCodeParams(params), true);
+    }
+
+    async deletePromoCode(codeId) {
+        if (!codeId) throw new ValidationError('codeId is required');
+        return this._request('DELETE', `/api/v1/promo-codes/${codeId}`);
+    }
+
+    async validatePromoCode(params) {
+        if (!params.code) throw new ValidationError('code is required');
+        if (!params.amount) throw new ValidationError('amount is required');
+        return this._request('POST', '/api/v1/promo-codes/validate', {
+            code: params.code,
+            amount: params.amount,
+            link_id: params.linkId,
+            provider: params.provider,
+            customer_identifier: params.customerIdentifier
+        }, true);
+    }
+
+    async redeemPromoCode(params) {
+        if (!params.transactionId) throw new ValidationError('transactionId is required');
+        return this._request('POST', '/api/v1/promo-codes/redeem', {
+            code: params.code,
+            amount: params.amount,
+            link_id: params.linkId,
+            provider: params.provider,
+            customer_identifier: params.customerIdentifier,
+            transaction_id: params.transactionId,
+            order_id: params.orderId,
+            idempotency_key: params.idempotencyKey
+        }, true);
+    }
+
+    async applyPaymentLinkCoupon(shortCode, code, options = {}) {
+        if (!shortCode) throw new ValidationError('shortCode is required');
+        if (!code) throw new ValidationError('code is required');
+        return this._request('POST', `/api/v1/payment-links/${shortCode}/apply-coupon`, {
+            code,
+            amount: options.amount,
+            quantity: options.quantity || 1,
+            provider: options.provider,
+            customer_identifier: options.customerIdentifier
         }, true);
     }
     
@@ -1010,6 +1096,7 @@ class ShegerPay {
                 throw new ShegerPayError(message, response.status);
             }
             
+            if (response.status === 204) return {};
             return response.json();
             
         } catch (error) {
@@ -1063,16 +1150,56 @@ async function verifyWebhookSignature(payload, signature, secret) {
     return `sha256=${expected}` === signature;
 }
 
+/**
+ * Verify signed payment-link redirect parameters.
+ * Webhooks/order status remain the source of truth for fulfillment.
+ */
+async function verifyRedirectSignature(params, signature, secret) {
+    const amount = Number(params.amount).toFixed(2);
+    const payload = [
+        params.checkoutSessionId,
+        params.orderId,
+        params.shortCode,
+        amount,
+        params.currency || 'ETB',
+        params.status || 'paid'
+    ].join('|');
+
+    if (typeof require !== 'undefined') {
+        const crypto = require('crypto');
+        const expected = crypto
+            .createHmac('sha256', secret)
+            .update(payload)
+            .digest('hex');
+        return expected === signature || `sha256=${expected}` === signature;
+    }
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+    const expected = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    return expected === signature || `sha256=${expected}` === signature;
+}
+
 // Export for different module systems
 if (typeof module !== 'undefined' && module.exports) {
     // CommonJS
-    module.exports = { ShegerPay, ShegerPayError, AuthenticationError, ValidationError, verifyWebhookSignature };
+    module.exports = { ShegerPay, ShegerPayError, AuthenticationError, ValidationError, verifyWebhookSignature, verifyRedirectSignature };
 } else if (typeof window !== 'undefined') {
     // Browser
     window.ShegerPay = ShegerPay;
     window.verifyWebhookSignature = verifyWebhookSignature;
+    window.verifyRedirectSignature = verifyRedirectSignature;
 }
 
 // ES Modules
-export { ShegerPay, ShegerPayError, AuthenticationError, ValidationError, verifyWebhookSignature };
+export { ShegerPay, ShegerPayError, AuthenticationError, ValidationError, verifyWebhookSignature, verifyRedirectSignature };
 export default ShegerPay;
